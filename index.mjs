@@ -64,7 +64,7 @@ if (prev) {
   await new Promise((resolve) => {
     execFile(
       process.platform === "win32" ? "npx.cmd" : "npx",
-      ["-y", "oasdiff", "diff", prev, filePath],
+      ["-y", "@redocly/cli@latest", "diff", prev, filePath],
       { cwd: __dirname },
       async (_err, stdout, stderr) => {
         const stamp = new Date().toISOString().replace(/[:.]/g, "-");

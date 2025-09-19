@@ -2,7 +2,7 @@ name: Daily OpenAPI Watch
 
 on:
   schedule:
-    - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30am PT; adjust as needed
+    - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30am PT
   workflow_dispatch:
 
 jobs:
@@ -19,11 +19,11 @@ jobs:
         with:
           node-version: 20
 
-      # Run the watcher (no npm install needed)
-      - name: Fetch & diff OpenAPI (script)
+      # 1) Fetch and update meta/history
+      - name: Fetch OpenAPI & update meta/history
         run: node index.mjs
 
-      # Show the last 50 runs in the job summary for easy visibility
+      # 2) Show last 50 runs in the job summary
       - name: Show last 50 runs in summary
         run: |
           echo "### Last 50 runs" >> $GITHUB_STEP_SUMMARY
@@ -33,17 +33,59 @@ jobs:
             echo "_No runs.log yet_" >> $GITHUB_STEP_SUMMARY
           fi
 
-      # oasdiff raw JSON diff (requires previous.json & latest.json created by the script)
-      - name: oasdiff JSON raw diff
-        if: ${{ hashFiles('data/previous.json') != '' }}
+      # 3) Read latest/previous from meta.json
+      - name: Read latest/previous from meta
+        id: meta
+        run: |
+          LATEST=$(jq -r '.latestFile' data/meta.json)
+          PREV=$(jq -r '.previousFile' data/meta.json)
+          echo "From meta -> Latest: $LATEST  Previous: $PREV"
+          echo "LATEST=$LATEST" >> $GITHUB_ENV
+          echo "PREV=$PREV" >> $GITHUB_ENV
+
+      # 4) Fallback: pick the two most recent **dated spec files** (exclude meta.json)
+      - name: Fallback latest/previous from dated files
+        if: ${{ env.PREV == '' || env.PREV == 'null' }}
+        run: |
+          # Only files that look like YYYY-MM-DD-<hash>.json
+          mapfile -t FILES < <(ls -t data/[0-9][0-9][0-9][0-9]-*-*.json 2>/dev/null || true)
+          if [ "${#FILES[@]}" -ge 2 ]; then
+            LATEST=$(basename "${FILES[0]}")
+            PREV=$(basename "${FILES[1]}")
+            echo "Fallback -> Latest: $LATEST  Previous: $PREV"
+            echo "LATEST=$LATEST" >> $GITHUB_ENV
+            echo "PREV=$PREV" >> $GITHUB_ENV
+          else
+            echo "Not enough dated spec files yet for a diff."
+          fi
+
+      # 5) Sanity print which two files we'll compare
+      - name: Print comparison pair
+        if: ${{ env.PREV != '' && env.PREV != 'null' }}
+        run: |
+          echo "Comparing:"
+          echo "  base:     data/${{ env.PREV }}"
+          echo "  revision: data/${{ env.LATEST }}"
+          ls -l data/${{ env.PREV }} data/${{ env.LATEST }}
+
+      # 6) oasdiff JSON diff
+      - name: oasdiff (JSON)
+        if: ${{ env.PREV != '' && env.PREV != 'null' }}
         uses: oasdiff/oasdiff-action/diff@v0.0.21
         with:
-          base: data/previous.json
-          revision: data/latest.json
+          base: data/${{ env.PREV }}
+          revision: data/${{ env.LATEST }}
           format: json
           output-to-file: diffs/${{ github.run_id }}.json
 
-      # Commit any new/changed files (data/, diffs/, logs/)
+      # 7) Ensure a file exists even if the diff is empty (e.g., formatting-only changes)
+      - name: Ensure diff artifact exists
+        if: ${{ env.PREV != '' && env.PREV != 'null' }}
+        run: |
+          f="diffs/${{ github.run_id }}.json"
+          [ -s "$f" ] || echo '{}' > "$f"
+
+      # 8) Commit artifacts
       - name: Commit changes
         run: |
           git config user.name "openapi-bot"
@@ -52,6 +94,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "chore: store latest spec + diff(s) + run log [skip ci]"
+            git commit -m "chore: store latest spec + diff + run log [skip ci]"
             git push
           fi

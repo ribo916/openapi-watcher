@@ -2,7 +2,7 @@ name: Daily OpenAPI Watch
 
 on:
   schedule:
-    - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30am PT
+    - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30am PT; adjust as needed
   workflow_dispatch:
 
 jobs:
@@ -19,9 +19,21 @@ jobs:
         with:
           node-version: 20
 
-      # No npm ci / npm i needed
-      - run: node index.mjs
+      # Run the watcher (no npm install needed)
+      - name: Fetch & diff OpenAPI
+        run: node index.mjs
 
+      # Show the last 50 runs in the job summary for easy visibility
+      - name: Show last 50 runs in summary
+        run: |
+          echo "### Last 50 runs" >> $GITHUB_STEP_SUMMARY
+          if [ -f logs/runs.log ]; then
+            tail -n 50 logs/runs.log >> $GITHUB_STEP_SUMMARY
+          else
+            echo "_No runs.log yet_" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # Commit any new/changed files (note: runs.log updates every run)
       - name: Commit changes
         run: |
           git config user.name "openapi-bot"
@@ -30,6 +42,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "chore: store latest spec + diff [skip ci]"
+            git commit -m "chore: store latest spec + diff + run log [skip ci]"
             git push
           fi

@@ -23,7 +23,7 @@ jobs:
       - name: Fetch OpenAPI & update meta/history
         run: node index.mjs
 
-      # 2) Show last 50 runs in the job summary
+      # 2) Show the last 50 runs in the job summary
       - name: Show last 50 runs in summary
         run: |
           echo "### Last 50 runs" >> $GITHUB_STEP_SUMMARY
@@ -43,11 +43,10 @@ jobs:
           echo "LATEST=$LATEST" >> $GITHUB_ENV
           echo "PREV=$PREV" >> $GITHUB_ENV
 
-      # 4) Fallback: pick the two most recent **dated spec files** (exclude meta.json)
+      # 4) Fallback: pick the two most recent dated spec files (exclude meta.json)
       - name: Fallback latest/previous from dated files
         if: ${{ env.PREV == '' || env.PREV == 'null' }}
         run: |
-          # Only files that look like YYYY-MM-DD-<hash>.json
           mapfile -t FILES < <(ls -t data/[0-9][0-9][0-9][0-9]-*-*.json 2>/dev/null || true)
           if [ "${#FILES[@]}" -ge 2 ]; then
             LATEST=$(basename "${FILES[0]}")
@@ -59,7 +58,7 @@ jobs:
             echo "Not enough dated spec files yet for a diff."
           fi
 
-      # 5) Sanity print which two files we'll compare
+      # 5) Print which two files we'll compare
       - name: Print comparison pair
         if: ${{ env.PREV != '' && env.PREV != 'null' }}
         run: |
@@ -68,7 +67,7 @@ jobs:
           echo "  revision: data/${{ env.LATEST }}"
           ls -l data/${{ env.PREV }} data/${{ env.LATEST }}
 
-      # 6) oasdiff JSON diff
+      # 6) oasdiff JSON diff (machine-readable)
       - name: oasdiff (JSON)
         if: ${{ env.PREV != '' && env.PREV != 'null' }}
         uses: oasdiff/oasdiff-action/diff@v0.0.21
@@ -78,22 +77,29 @@ jobs:
           format: json
           output-to-file: diffs/${{ github.run_id }}.json
 
-      # 7) Ensure a file exists even if the diff is empty (e.g., formatting-only changes)
+      # 7) Ensure a file exists even if the diff is empty
       - name: Ensure diff artifact exists
         if: ${{ env.PREV != '' && env.PREV != 'null' }}
         run: |
           f="diffs/${{ github.run_id }}.json"
           [ -s "$f" ] || echo '{}' > "$f"
 
-      # 8) Commit artifacts
-      - name: Commit changes
+      # 8) Stage only spec/diff/meta (avoid daily PRs from runs.log)
+      - name: Stage changes
         run: |
-          git config user.name "openapi-bot"
-          git config user.email "openapi-bot@example.com"
-          git add data diffs logs || true
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "chore: store latest spec + diff + run log [skip ci]"
-            git push
-          fi
+          git add data/*.json data/meta.json diffs/*.json 2>/dev/null || true
+
+      # 9) Open a PR if there are changes (auto-skips if clean)
+      - name: Create PR for spec update
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: store latest spec + diff"
+          title: "OpenAPI change: ${{ env.PREV }} → ${{ env.LATEST }}"
+          body: |
+            Latest: `${{ env.LATEST }}`
+            Previous: `${{ env.PREV }}`
+            Diff (JSON): `diffs/${{ github.run_id }}.json`
+
+            _This PR was created automatically by GitHub Actions._
+          branch: "spec-update/${{ github.run_id }}"
+          labels: "openapi, automated"

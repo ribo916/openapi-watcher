@@ -2,7 +2,7 @@ name: Daily OpenAPI Watch
 
 on:
   schedule:
-    - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30am PT
+    - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30am PT; adjust as needed
   workflow_dispatch:
 
 jobs:
@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +18,7 @@ jobs:
         with:
           node-version: 20
 
-      # 1) Fetch and update meta/history
+      # 1) Fetch and update meta/history (writes dated files on change)
       - name: Fetch OpenAPI & update meta/history
         run: node index.mjs
 
@@ -43,7 +42,7 @@ jobs:
           echo "LATEST=$LATEST" >> $GITHUB_ENV
           echo "PREV=$PREV" >> $GITHUB_ENV
 
-      # 4) Fallback: pick the two most recent dated spec files (exclude meta.json)
+      # 4) Fallback: pick the two most recent **dated spec files** (exclude meta.json)
       - name: Fallback latest/previous from dated files
         if: ${{ env.PREV == '' || env.PREV == 'null' }}
         run: |
@@ -58,7 +57,7 @@ jobs:
             echo "Not enough dated spec files yet for a diff."
           fi
 
-      # 5) Print which two files we'll compare
+      # 5) Sanity print the pair
       - name: Print comparison pair
         if: ${{ env.PREV != '' && env.PREV != 'null' }}
         run: |
@@ -77,29 +76,22 @@ jobs:
           format: json
           output-to-file: diffs/${{ github.run_id }}.json
 
-      # 7) Ensure a file exists even if the diff is empty
+      # 7) Ensure a file exists even if the diff is empty (format-only changes)
       - name: Ensure diff artifact exists
         if: ${{ env.PREV != '' && env.PREV != 'null' }}
         run: |
           f="diffs/${{ github.run_id }}.json"
           [ -s "$f" ] || echo '{}' > "$f"
 
-      # 8) Stage only spec/diff/meta (avoid daily PRs from runs.log)
-      - name: Stage changes
+      # 8) Commit artifacts directly to main (includes logs to keep history)
+      - name: Commit changes
         run: |
-          git add data/*.json data/meta.json diffs/*.json 2>/dev/null || true
-
-      # 9) Open a PR if there are changes (auto-skips if clean)
-      - name: Create PR for spec update
-        uses: peter-evans/create-pull-request@v6
-        with:
-          commit-message: "chore: store latest spec + diff"
-          title: "OpenAPI change: ${{ env.PREV }} → ${{ env.LATEST }}"
-          body: |
-            Latest: `${{ env.LATEST }}`
-            Previous: `${{ env.PREV }}`
-            Diff (JSON): `diffs/${{ github.run_id }}.json`
-
-            _This PR was created automatically by GitHub Actions._
-          branch: "spec-update/${{ github.run_id }}"
-          labels: "openapi, automated"
+          git config user.name "openapi-bot"
+          git config user.email "openapi-bot@example.com"
+          git add data diffs logs || true
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: store latest spec + diff + run log [skip ci]"
+            git push
+          fi

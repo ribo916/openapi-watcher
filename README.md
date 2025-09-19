@@ -1,6 +1,5 @@
 # OpenAPI Watcher (GitHub Actions)
-
-**TL;DR**  
+  
 This repo uses **GitHub Actions** to fetch a remote OpenAPI file **once a day**, saves a **dated copy only if it changed**, and writes a **human‑readable diff**.  
 No servers. No local build. It’s just a scheduled commit bot.
 

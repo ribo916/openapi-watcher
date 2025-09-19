@@ -40,7 +40,7 @@ jobs:
         with:
           base: data/previous.json
           revision: data/latest.json
-          format: json
+          format: markdown
           output-to-file: diffs/${{ github.run_id }}.json
 
       # Commit any new/changed files (data/, diffs/, logs/)

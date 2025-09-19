@@ -20,7 +20,7 @@ jobs:
           node-version: 20
 
       # Run the watcher (no npm install needed)
-      - name: Fetch & diff OpenAPI
+      - name: Fetch & diff OpenAPI (script)
         run: node index.mjs
 
       # Show the last 50 runs in the job summary for easy visibility
@@ -33,7 +33,17 @@ jobs:
             echo "_No runs.log yet_" >> $GITHUB_STEP_SUMMARY
           fi
 
-      # Commit any new/changed files (note: runs.log updates every run)
+      # oasdiff raw JSON diff (requires previous.json & latest.json created by the script)
+      - name: oasdiff JSON raw diff
+        if: ${{ hashFiles('data/previous.json') != '' }}
+        uses: oasdiff/oasdiff-action/diff@v0.0.21
+        with:
+          base: data/previous.json
+          revision: data/latest.json
+          format: json
+          output-to-file: diffs/${{ github.run_id }}.json
+
+      # Commit any new/changed files (data/, diffs/, logs/)
       - name: Commit changes
         run: |
           git config user.name "openapi-bot"
@@ -42,6 +52,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "chore: store latest spec + diff + run log [skip ci]"
+            git commit -m "chore: store latest spec + diff(s) + run log [skip ci]"
             git push
           fi

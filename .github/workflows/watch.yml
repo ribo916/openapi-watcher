@@ -1,0 +1,37 @@
+name: Daily OpenAPI Watch
+
+on:
+  schedule:
+    - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30am PT; adjust as needed
+  workflow_dispatch:        # lets you run it manually
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # needed to commit changed files
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # install oasdiff from package.json (or you can skip this and rely on npx in the script)
+      - run: npm ci || npm i
+
+      - run: npm run check
+
+      # Commit any new data/diffs/logs produced by the run
+      - name: Commit changes
+        run: |
+          git config user.name "openapi-bot"
+          git config user.email "openapi-bot@example.com"
+          git add data diffs logs || true
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: store latest spec + diff [skip ci]"
+            git push
+          fi

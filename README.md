@@ -1,6 +1,6 @@
 # OpenAPI Watcher (GitHub Actions)
-  
-This repo uses **GitHub Actions** to fetch a remote OpenAPI file **once a day**, saves a **dated copy only if it changed**, and writes a **human‑readable diff**.  
+
+This repo uses **GitHub Actions** to fetch a remote OpenAPI file **once a day**, saves a **dated copy only if it changed**, writes a **human‑readable diff**, and appends a simple **run log** on every run.  
 No servers. No local build. It’s just a scheduled commit bot.
 
 ---
@@ -13,10 +13,13 @@ No servers. No local build. It’s just a scheduled commit bot.
   - fetches the spec from `https://docs.polly.io/openapi/6736ab7245a5840046004c04`
   - skips download if the server says “not modified”
   - hashes the content to avoid duplicates
-  - saves a new file under `data/YYYY-MM-DD-<hash12>.json` if different
+  - saves a new file under `data/YYYY-MM-DD-<hash12>.json` **only when content changes**
+  - on each change, updates **stable pointers**:
+    - `data/latest.json` → the newest version
+    - `data/previous.json` → the prior version (appears starting with the second change)
   - generates an OpenAPI‑aware diff (using `npx @redocly/cli diff`)
-  - logs the run
-- The workflow **commits** any new/changed files back to the repo.
+  - appends a run entry to `logs/runs.log` **every run**
+- The workflow **commits** any new/changed files back to the repo. Because `runs.log` updates every run, you’ll see a daily commit even if the spec didn’t change.
 
 ---
 
@@ -24,13 +27,18 @@ No servers. No local build. It’s just a scheduled commit bot.
 
 ```
 .
-├─ index.mjs                # the script that does the fetch / compare / save / diff
+├─ index.mjs                # fetch / compare / save / stable pointers / diff / log
 ├─ .github/
 │  └─ workflows/
-│     └─ watch.yml          # the scheduled GitHub Action
-├─ data/                    # stored specs (one file per change) + meta.json
-├─ diffs/                   # plain‑text diffs between last and current
-└─ logs/                    # simple run log (runs.log)
+│     └─ watch.yml          # scheduled GitHub Action (cron + manual run)
+├─ data/
+│  ├─ YYYY-MM-DD-<hash12>.json   # one file per actual change
+│  ├─ latest.json                # stable pointer to current version (after first change)
+│  └─ previous.json              # stable pointer to last version (after second change)
+├─ diffs/
+│  └─ <ISO-STAMP>.txt       # OpenAPI-aware diff per change (previous → current)
+└─ logs/
+   └─ runs.log              # one line per run
 ```
 
 ---
@@ -45,7 +53,8 @@ No servers. No local build. It’s just a scheduled commit bot.
   1. **Checkout** the repo
   2. **Setup Node** 20
   3. **Run** `node index.mjs`
-  4. **Commit** any new files under `data/`, `diffs/`, `logs/`
+  4. **Show last 50 runs** in the Action summary
+  5. **Commit** any new files under `data/`, `diffs/`, `logs/`
 
 > We don’t install npm dependencies. The script calls diff via  
 > `npx @redocly/cli@latest diff …` (downloaded on the fly).
@@ -55,21 +64,22 @@ No servers. No local build. It’s just a scheduled commit bot.
 ## What the script does (`index.mjs`)
 
 1. **Prepare folders**: ensures `data/`, `diffs/`, `logs/` exist.
-2. **Load cache**: reads `data/meta.json` (stores `etag`, `last-modified`, `latestFile`, `latestHash`).
-3. **Fetch spec**:
-   - Sends conditional headers (`If-None-Match`, `If-Modified-Since`) when available.
-   - If the server returns **304 Not Modified**, it exits early.
+2. **Load cache**: reads `data/meta.json` (stores `etag`, `last-modified`, `latestFile`, `latestHash`, plus `previous*` after the first change).
+3. **Fetch spec** (Conditional GET):
+   - Sends `If-None-Match` (ETag) / `If-Modified-Since` (Last‑Modified) when available.
+   - If the server returns **304 Not Modified**, exits early (no download).
 4. **Detect content change**:
    - Reads body as text and computes **SHA‑256**.
    - If hash equals the last saved hash, exits (no duplicate saves).
 5. **Save new version**:
    - Writes `data/YYYY-MM-DD-<hash12>.json`.
-6. **Generate a diff (only if there’s a previous file)**:
+   - Refreshes **stable pointers**: copies prior `latest` → `previous.json` (if any), then writes the new content to `latest.json`.
+6. **Generate a diff** (only if there’s a previous version):
    - Runs: `npx @redocly/cli@latest diff <prev> <new>`
    - Writes a timestamped report to `diffs/<ISO-STAMP>.txt`.
 7. **Update cache + logs**:
-   - Updates `data/meta.json` with the new `etag`, `last-modified`, filename, and hash.
-   - Appends a line to `logs/runs.log`.
+   - Updates `data/meta.json` with new headers and file/hash pointers.
+   - Appends a line to `logs/runs.log`. (This is why there’s a daily commit.)
 
 ---
 
@@ -77,13 +87,14 @@ No servers. No local build. It’s just a scheduled commit bot.
 
 - **`data/`**
   - One JSON per **actual change**
-  - **`meta.json`**: internal cache
+  - **`latest.json`** and **`previous.json`** as stable pointers (appear after change events)
+  - **`meta.json`**: internal cache (hashes, headers, pointers)
 - **`diffs/`**
   - Text files showing what changed (paths, params, schemas, etc.)
 - **`logs/runs.log`**
-  - One line per run (timestamp + saved filename)
+  - One line per run (timestamp + action taken)
 
-> Diffs only appear **after the second different version** exists.
+> Diffs only appear **after there are two different versions** to compare.
 
 ---
 
@@ -91,9 +102,10 @@ No servers. No local build. It’s just a scheduled commit bot.
 
 - Go to **Actions → Daily OpenAPI Watch → Run workflow**.
 - After it completes, check:
-  - `data/` for a new file
+  - `data/` for a new file / stable pointers
   - `diffs/` for a diff (if not the first different version)
   - `logs/runs.log` for a new entry
+  - the Action’s **Run summary** for the last 50 runs
 
 ---
 

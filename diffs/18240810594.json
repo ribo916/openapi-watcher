@@ -1,0 +1,1 @@
+{"paths":{"added":["/api/v2/exchange/co-issuer/loans/{exchangeLoanId}/"]},"components":{"schemas":{"added":["ExchangeProperty","ExchangePropertyAddress","ExchangeBorrower","ExchangeCommitment","ExchangeLoan"]}}}

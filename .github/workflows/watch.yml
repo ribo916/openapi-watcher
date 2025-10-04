@@ -96,30 +96,36 @@ jobs:
             echo "nonempty=true" >> $GITHUB_OUTPUT
           fi
 
-      # 7.6) Gate on *pair change* so we only alert once per unique PREV→LATEST combo
-      - name: Has comparison pair changed?
-        id: pair
+      # 7.6) Compute a stable hash of the diff content
+      - name: Compute diff hash
+        id: diffhash
         if: steps.diffcheck.outputs.nonempty == 'true'
         run: |
           mkdir -p logs
-          NEW_PAIR="${PREV} -> ${LATEST}"
-          if [ -f logs/last_pair.txt ]; then
-            LAST_PAIR="$(cat logs/last_pair.txt)"
+          f="diffs/${{ github.run_id }}.json"
+          # portable sha256: use openssl (macOS & Linux)
+          HASH=$(openssl dgst -sha256 "$f" | awk '{print $2}')
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Current diff hash: $HASH"
+
+      # 7.7) Compare with last notified hash (alert only on new hash)
+      - name: Is this a new diff hash?
+        id: newhash
+        if: steps.diffcheck.outputs.nonempty == 'true'
+        run: |
+          LAST=""
+          [ -f logs/last_diff_hash.txt ] && LAST="$(cat logs/last_diff_hash.txt)"
+          echo "Last diff hash: ${LAST:-<none>}"
+          if [ "$LAST" != "${{ steps.diffhash.outputs.hash }}" ]; then
+            echo "is_new=true" >> $GITHUB_OUTPUT
+            echo "${{ steps.diffhash.outputs.hash }}" > logs/last_diff_hash.txt
           else
-            LAST_PAIR=""
-          fi
-          echo "New pair:  $NEW_PAIR"
-          echo "Last pair: $LAST_PAIR"
-          if [ "$NEW_PAIR" != "$LAST_PAIR" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "$NEW_PAIR" > logs/last_pair.txt
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "is_new=false" >> $GITHUB_OUTPUT
           fi
 
-      # 7.7) Create a GitHub Issue when there IS a change AND the pair is new
-      - name: Create GitHub issue on change
-        if: steps.diffcheck.outputs.nonempty == 'true' && steps.pair.outputs.changed == 'true'
+      # 7.8) Create a GitHub Issue only when diff is non-empty AND hash is new
+      - name: Create GitHub issue on new change
+        if: steps.diffcheck.outputs.nonempty == 'true' && steps.newhash.outputs.is_new == 'true'
         uses: actions/github-script@v7
         env:
           PREV: ${{ env.PREV }}
@@ -155,7 +161,7 @@ jobs:
             });
             core.info(`Created issue #${created.data.number}`);
 
-      # 8) Commit artifacts directly to main (includes logs to keep history, incl. last_pair.txt)
+      # 8) Commit artifacts directly to main (includes logs to keep history, incl. last_diff_hash.txt)
       - name: Commit changes
         run: |
           git config user.name "openapi-bot"

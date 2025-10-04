@@ -94,6 +94,8 @@ try {
     previousHash: meta.latestHash
   }, null, 2));
 
+  await fs.writeFile(new URL(".changed", import.meta.url), "1");
+  
   await appendRunLog(`SAVED ${path.basename(filePath)} (sha256 ${hash.slice(0,12)})`);
 } catch (e) {
   await appendRunLog(`ERROR ${e?.message || e}`);

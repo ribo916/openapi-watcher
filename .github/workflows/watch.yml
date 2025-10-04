@@ -2,7 +2,7 @@ name: Daily OpenAPI Watch
 
 on:
   schedule:
-    - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30am PT
+    - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30 AM PT
   workflow_dispatch:
 
 concurrency:
@@ -14,66 +14,51 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      issues: write   # for creating Issues
+      issues: write
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # 1) Fetch and update meta/history (writes dated files on change)
+      # 1) Fetch spec and maybe save new file
       - name: Fetch OpenAPI & update meta/history
         run: node index.mjs
 
-      # 2) Show the last 50 runs in the job summary
-      - name: Show last 50 runs in summary
+      # 2) Detect if index.mjs actually saved something
+      - name: Check change flag
+        id: changed
         run: |
-          echo "### Last 50 runs" >> $GITHUB_STEP_SUMMARY
-          if [ -f logs/runs.log ]; then
-            tail -n 50 logs/runs.log >> $GITHUB_STEP_SUMMARY
+          if [ -f .changed ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
           else
-            echo "_No runs.log yet_" >> $GITHUB_STEP_SUMMARY
+            echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-      # 3) Read latest/previous from meta.json
+      # 3) Show recent run log
+      - name: Show last 50 runs
+        run: |
+          echo "### Last 50 runs" >> $GITHUB_STEP_SUMMARY
+          [ -f logs/runs.log ] && tail -n 50 logs/runs.log >> $GITHUB_STEP_SUMMARY || echo "_No runs yet_" >> $GITHUB_STEP_SUMMARY
+
+      # 4) Read latest / previous from meta.json
       - name: Read latest/previous from meta
         id: meta
+        if: steps.changed.outputs.changed == 'true'
         run: |
           LATEST=$(jq -r '.latestFile' data/meta.json)
           PREV=$(jq -r '.previousFile' data/meta.json)
-          echo "From meta -> Latest: $LATEST  Previous: $PREV"
           echo "LATEST=$LATEST" >> $GITHUB_ENV
           echo "PREV=$PREV" >> $GITHUB_ENV
+          echo "Comparing $PREV → $LATEST"
 
-      # 4) Fallback: pick the two most recent **dated spec files** (exclude meta.json)
-      - name: Fallback latest/previous from dated files
-        if: ${{ env.PREV == '' || env.PREV == 'null' }}
-        run: |
-          mapfile -t FILES < <(ls -t data/[0-9][0-9][0-9][0-9]-*-*.json 2>/dev/null || true)
-          if [ "${#FILES[@]}" -ge 2 ]; then
-            LATEST=$(basename "${FILES[0]}")
-            PREV=$(basename "${FILES[1]}")
-            echo "Fallback -> Latest: $LATEST  Previous: $PREV"
-            echo "LATEST=$LATEST" >> $GITHUB_ENV
-            echo "PREV=$PREV" >> $GITHUB_ENV
-          else
-            echo "Not enough dated spec files yet for a diff."
-          fi
-
-      # 5) Sanity print the pair
-      - name: Print comparison pair
-        if: ${{ env.PREV != '' && env.PREV != 'null' }}
-        run: |
-          echo "Comparing:"
-          echo "  base:     data/${{ env.PREV }}"
-          echo "  revision: data/${{ env.LATEST }}"
-          ls -l "data/${{ env.PREV }}" "data/${{ env.LATEST }}"
-
-      # 6) oasdiff JSON diff (machine-readable)
+      # 5) Run oasdiff only if spec changed
       - name: oasdiff (JSON)
-        if: ${{ env.PREV != '' && env.PREV != 'null' }}
+        if: steps.changed.outputs.changed == 'true' && env.PREV != '' && env.PREV != 'null'
         uses: oasdiff/oasdiff-action/diff@v0.0.21
         with:
           base: data/${{ env.PREV }}
@@ -81,57 +66,16 @@ jobs:
           format: json
           output-to-file: diffs/${{ github.run_id }}.json
 
-      # 7) Ensure a file exists even if the diff is empty (format-only changes)
+      # 6) Ensure diff file always exists
       - name: Ensure diff artifact exists
-        if: ${{ env.PREV != '' && env.PREV != 'null' }}
+        if: steps.changed.outputs.changed == 'true'
         run: |
           f="diffs/${{ github.run_id }}.json"
           [ -s "$f" ] || echo '{}' > "$f"
 
-      # 7.5) Detect a real (non-empty) diff
-      - name: Is diff non-empty?
-        id: diffcheck
-        if: ${{ env.PREV != '' && env.PREV != 'null' }}
-        run: |
-          f="diffs/${{ github.run_id }}.json"
-          if jq -e 'length == 0' "$f" >/dev/null 2>&1; then
-            echo "nonempty=false" >> $GITHUB_OUTPUT
-          else
-            echo "nonempty=true" >> $GITHUB_OUTPUT
-          fi
-
-      # 7.6) Compute a stable (canonical) hash of the diff content
-      - name: Compute diff hash (canonical)
-        id: diffhash
-        if: steps.diffcheck.outputs.nonempty == 'true'
-        run: |
-          mkdir -p logs
-          f="diffs/${{ github.run_id }}.json"
-          # Canonicalize JSON so key ordering doesn't cause false 'new' alerts
-          jq -S '.' "$f" > "$f.canon"
-          mv "$f.canon" "$f"
-          HASH=$(openssl dgst -sha256 "$f" | awk '{print $2}')
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
-          echo "Current diff hash: $HASH"
-
-      # 7.7) Compare with last notified hash (alert only on new hash)
-      - name: Is this a new diff hash?
-        id: newhash
-        if: steps.diffcheck.outputs.nonempty == 'true'
-        run: |
-          LAST=""
-          [ -f logs/last_diff_hash.txt ] && LAST="$(cat logs/last_diff_hash.txt)"
-          echo "Last diff hash: ${LAST:-<none>}"
-          if [ "$LAST" != "${{ steps.diffhash.outputs.hash }}" ]; then
-            echo "is_new=true" >> $GITHUB_OUTPUT
-            echo "${{ steps.diffhash.outputs.hash }}" > logs/last_diff_hash.txt
-          else
-            echo "is_new=false" >> $GITHUB_OUTPUT
-          fi
-
-      # 7.8) Create a GitHub Issue only when diff is non-empty AND hash is new
-      - name: Create GitHub issue on new change
-        if: steps.diffcheck.outputs.nonempty == 'true' && steps.newhash.outputs.is_new == 'true'
+      # 7) Create an issue only when we truly saved a new spec
+      - name: Create GitHub issue on real change
+        if: steps.changed.outputs.changed == 'true'
         uses: actions/github-script@v7
         env:
           PREV: ${{ env.PREV }}
@@ -142,7 +86,7 @@ jobs:
             const path = `diffs/${process.env.GITHUB_RUN_ID}.json`;
             const diff = fs.readFileSync(path, 'utf8');
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const title = `OpenAPI change: ${process.env.PREV} → ${process.env.LATEST}`;
+            const title = `OpenAPI change detected: ${process.env.PREV} → ${process.env.LATEST}`;
             const body = [
               `**Base:** \`data/${process.env.PREV}\``,
               `**Revision:** \`data/${process.env.LATEST}\``,
@@ -158,7 +102,7 @@ jobs:
               await github.rest.issues.createLabel({
                 owner: context.repo.owner, repo: context.repo.repo, name: label
               });
-            } catch (_) { /* already exists */ }
+            } catch (_) {} // label probably exists
 
             const created = await github.rest.issues.create({
               owner: context.repo.owner,
@@ -169,15 +113,16 @@ jobs:
             });
             core.info(`Created issue #${created.data.number}`);
 
-      # 8) Commit artifacts directly to main (includes logs to keep history, incl. last_diff_hash.txt)
-      - name: Commit changes
+      # 8) Commit artifacts (data, diffs, logs, .changed removed)
+      - name: Commit artifacts
         run: |
+          rm -f .changed || true
           git config user.name "openapi-bot"
           git config user.email "openapi-bot@example.com"
           git add data diffs logs || true
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else
-            git commit -m "chore: store latest spec + diff + run log [skip ci]"
+            git commit -m "chore: update spec + diff + logs [skip ci]"
             git push
           fi

@@ -1,0 +1,18 @@
+{
+  "components": {
+    "schemas": {
+      "added": [
+        "ExchangeBorrower",
+        "ExchangeLoan",
+        "ExchangeCommitment",
+        "ExchangeProperty",
+        "ExchangePropertyAddress"
+      ]
+    }
+  },
+  "paths": {
+    "added": [
+      "/api/v2/exchange/co-issuer/loans/{exchangeLoanId}/"
+    ]
+  }
+}

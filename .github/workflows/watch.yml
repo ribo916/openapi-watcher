@@ -2,7 +2,7 @@ name: Daily OpenAPI Watch
 
 on:
   schedule:
-    - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30am PT; adjust as needed
+    - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30am PT
   workflow_dispatch:
 
 jobs:
@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: write   # <-- needed to open an Issue
 
     steps:
       - uses: actions/checkout@v4
@@ -82,6 +83,61 @@ jobs:
         run: |
           f="diffs/${{ github.run_id }}.json"
           [ -s "$f" ] || echo '{}' > "$f"
+
+      # 7.5) Detect a real (non-empty) diff
+      - name: Is diff non-empty?
+        id: diffcheck
+        if: ${{ env.PREV != '' && env.PREV != 'null' }}
+        run: |
+          f="diffs/${{ github.run_id }}.json"
+          if jq -e 'length == 0' "$f" >/dev/null 2>&1; then
+            echo "nonempty=false" >> $GITHUB_OUTPUT
+          else
+            echo "nonempty=true" >> $GITHUB_OUTPUT
+          fi
+
+      # 7.6) Create a GitHub Issue when there IS a change
+      - name: Create GitHub issue on change
+        if: steps.diffcheck.outputs.nonempty == 'true'
+        uses: actions/github-script@v7
+        env:
+          PREV: ${{ env.PREV }}
+          LATEST: ${{ env.LATEST }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = `diffs/${process.env.GITHUB_RUN_ID}.json`;
+            const diff = fs.readFileSync(path, 'utf8');
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            const title = `OpenAPI change: ${process.env.PREV} → ${process.env.LATEST}`;
+            const body = [
+              `**Base:** \`data/${process.env.PREV}\``,
+              `**Revision:** \`data/${process.env.LATEST}\``,
+              `**Run:** ${runUrl}`,
+              '',
+              '```json',
+              diff.length > 60000 ? diff.slice(0, 60000) + '\n…(truncated)…' : diff,
+              '```'
+            ].join('\n');
+
+            // Optional label for filtering
+            const label = 'api-change';
+            try {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner, repo: context.repo.repo, name: label
+              });
+            } catch (_) { /* already exists */ }
+
+            const created = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: [label]
+            });
+
+            core.info(`Created issue #${created.data.number}`);
 
       # 8) Commit artifacts directly to main (includes logs to keep history)
       - name: Commit changes

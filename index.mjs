@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // === CONFIG ===
-const SPEC_URL = "https://docs.polly.io/openapi/6736ab7245a5840046004c04"; // prod
-// const SPEC_URL = "https://raw.githubusercontent.com/ribo916/openapi-watcher/refs/heads/master/test.json"; // test
+// const SPEC_URL = "https://docs.polly.io/openapi/6736ab7245a5840046004c04"; // prod
+const SPEC_URL = "https://raw.githubusercontent.com/ribo916/openapi-watcher/refs/heads/master/test.json"; // test
 
 const DATA_DIR = path.join(__dirname, "data");
 const DIFFS_DIR = path.join(__dirname, "diffs"); // kept for oasdiff outputs

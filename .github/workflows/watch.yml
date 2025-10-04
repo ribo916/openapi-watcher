@@ -5,12 +5,16 @@ on:
     - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30am PT
   workflow_dispatch:
 
+concurrency:
+  group: openapi-watcher
+  cancel-in-progress: false
+
 jobs:
   watch:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      issues: write   # needed to open an Issue
+      issues: write   # for creating Issues
 
     steps:
       - uses: actions/checkout@v4
@@ -65,7 +69,7 @@ jobs:
           echo "Comparing:"
           echo "  base:     data/${{ env.PREV }}"
           echo "  revision: data/${{ env.LATEST }}"
-          ls -l data/${{ env.PREV }} data/${{ env.LATEST }}
+          ls -l "data/${{ env.PREV }}" "data/${{ env.LATEST }}"
 
       # 6) oasdiff JSON diff (machine-readable)
       - name: oasdiff (JSON)
@@ -96,14 +100,16 @@ jobs:
             echo "nonempty=true" >> $GITHUB_OUTPUT
           fi
 
-      # 7.6) Compute a stable hash of the diff content
-      - name: Compute diff hash
+      # 7.6) Compute a stable (canonical) hash of the diff content
+      - name: Compute diff hash (canonical)
         id: diffhash
         if: steps.diffcheck.outputs.nonempty == 'true'
         run: |
           mkdir -p logs
           f="diffs/${{ github.run_id }}.json"
-          # portable sha256: use openssl (macOS & Linux)
+          # Canonicalize JSON so key ordering doesn't cause false 'new' alerts
+          jq -S '.' "$f" > "$f.canon"
+          mv "$f.canon" "$f"
           HASH=$(openssl dgst -sha256 "$f" | awk '{print $2}')
           echo "hash=$HASH" >> $GITHUB_OUTPUT
           echo "Current diff hash: $HASH"
@@ -143,13 +149,15 @@ jobs:
               `**Run:** ${runUrl}`,
               '',
               '```json',
-              diff.length > 60000 ? diff.slice(0, 60000) + '\n…(truncated)…' : diff,
+              diff.length > 60000 ? diff.slice(0, 60000) + '\\n…(truncated)…' : diff,
               '```'
             ].join('\n');
 
             const label = 'api-change';
             try {
-              await github.rest.issues.createLabel({owner: context.repo.owner, repo: context.repo.repo, name: label});
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner, repo: context.repo.repo, name: label
+              });
             } catch (_) { /* already exists */ }
 
             const created = await github.rest.issues.create({

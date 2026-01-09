@@ -1,0 +1,1 @@
+{"paths":{"modified":{"/api/v2/pe/loans/{losLoanId}/lock-reset/":{"operations":{"modified":{"POST":{"responses":{"modified":{"422":{"content":{"modified":{"application/json":{"examples":{"added":["ExampleUnprocessableResponse"],"deleted":["ExampleNotFoundResponse"]}}}}}}}}}}}}}}

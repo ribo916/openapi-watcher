@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='50' fill='%23FFD601'/></svg>">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>API changelog</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -444,6 +443,33 @@ function getRefs(obj, found=new Set()) {
   return found;
 }
 
+function buildReachabilityMap(schemas) {
+  const cache = new Map();
+  function findDirectRefs(obj, found=new Set()) {
+    if (!obj || typeof obj !== 'object') return found;
+    if (Array.isArray(obj)) { obj.forEach(v => findDirectRefs(v,found)); return found; }
+    if (obj.$ref) found.add(obj.$ref.split('/').pop());
+    Object.values(obj).forEach(v => findDirectRefs(v,found));
+    return found;
+  }
+  function getReachable(startName) {
+    if (cache.has(startName)) return cache.get(startName);
+    const reachable = new Set();
+    const worklist = [startName];
+    while (worklist.length) {
+      const name = worklist.pop();
+      if (reachable.has(name)) continue;
+      reachable.add(name);
+      const schema = schemas[name];
+      if (schema) for (const ref of findDirectRefs(schema)) if (!reachable.has(ref)) worklist.push(ref);
+    }
+    cache.set(startName, reachable);
+    return reachable;
+  }
+  for (const name of Object.keys(schemas)) getReachable(name);
+  return cache;
+}
+
 function diff(oldSpec, newSpec) {
   const oldPaths = oldSpec.paths ?? {};
   const newPaths = newSpec.paths ?? {};
@@ -555,26 +581,37 @@ function diff(oldSpec, newSpec) {
     const oe = extractEnums(oldSchemas[name]??{});
     const ne = extractEnums(newSchemas[name]??{});
     for (const field of new Set([...Object.keys(oe),...Object.keys(ne)])) {
-      const ov = new Set(oe[field]??[]);
-      const nv = new Set(ne[field]??[]);
+      const rawOld = (oe[field]??[]).filter(v => v != null);
+      const rawNew = (ne[field]??[]).filter(v => v != null);
+      const isNumeric = (vals) => vals.length > 0 && vals.filter(v => typeof v === 'number').length / vals.length > 0.5;
+      const valueType = isNumeric(rawNew.length ? rawNew : rawOld) ? 'numeric' : 'string';
+      const ov = new Set(rawOld.map(v => String(v)));
+      const nv = new Set(rawNew.map(v => String(v)));
       const added   = [...nv].filter(v => !ov.has(v));
       const removed = [...ov].filter(v => !nv.has(v));
       if (!added.length && !removed.length) continue;
-      const key = field || name;
-      if (!enumChangeMap.has(key)) enumChangeMap.set(key, {added:new Set(), removed:new Set(), schemas:new Set(), endpoints:new Set()});
+      const baseKey = field || name;
+      const key = `${baseKey}:${valueType}`;
+      if (!enumChangeMap.has(key)) enumChangeMap.set(key, {added:new Set(), removed:new Set(), schemas:new Set(), endpoints:new Set(), baseKey, valueType});
       const e = enumChangeMap.get(key);
       added.forEach(v => e.added.add(v));
       removed.forEach(v => e.removed.add(v));
       e.schemas.add(name);
     }
   }
+  const reachabilityMap = buildReachabilityMap(newSchemas);
+  function getOpReachable(op) {
+    const all = new Set();
+    for (const r of getRefs(op)) (reachabilityMap.get(r) ?? new Set([r])).forEach(s => all.add(s));
+    return all;
+  }
   for (const [,entry] of enumChangeMap) {
     for (const path of Object.keys(newPaths)) {
       for (const method of METHODS) {
         const op = newPaths[path]?.[method];
         if (!op) continue;
-        const r = getRefs(op);
-        if ([...entry.schemas].some(s => r.has(s))) entry.endpoints.add(`${method.toUpperCase()} ${path}`);
+        const opReachable = getOpReachable(op);
+        if ([...entry.schemas].some(s => opReachable.has(s))) entry.endpoints.add(`${method.toUpperCase()} ${path}`);
       }
     }
   }
@@ -584,8 +621,10 @@ function diff(oldSpec, newSpec) {
 
 function summaryBadge(d) {
   const { addedPaths, removedPaths, addedOps, removedOps, responseCodeChanges, paramChanges, requestBodyChanges, responseBodyChanges, schemaFieldChanges, enumChangeMap } = d;
-  const enumAdded = [...enumChangeMap.values()].reduce((n,e)=>n+e.added.size,0);
-  const enumRemoved = [...enumChangeMap.values()].reduce((n,e)=>n+e.removed.size,0);
+  const strKeys = new Set([...enumChangeMap.entries()].filter(([,e])=>e.valueType==='string').map(([,e])=>e.baseKey));
+  const visibleEnums = [...enumChangeMap.values()].filter(e=>!(e.valueType==='numeric'&&strKeys.has(e.baseKey)));
+  const enumAdded = visibleEnums.reduce((n,e)=>n+e.added.size,0);
+  const enumRemoved = visibleEnums.reduce((n,e)=>n+e.removed.size,0);
   const totalEndpoints = addedPaths.length + removedPaths.length + addedOps.length + removedOps.length;
   const totalCodes = responseCodeChanges.reduce((n,r)=>n+r.added.length+r.removed.length,0);
   const totalFields = requestBodyChanges.reduce((n,r)=>n+r.added.length+r.removed.length,0) + responseBodyChanges.reduce((n,r)=>n+r.added.length+r.removed.length,0);
@@ -696,10 +735,12 @@ function renderDiff(d, prevFile, latestFile, issueUrl) {
     html += `</div>`;
   }
 
-  if (enumChangeMap.size) {
+  const strKeysRender = new Set([...enumChangeMap.entries()].filter(([,e])=>e.valueType==='string').map(([,e])=>e.baseKey));
+  const visibleEnumEntries = [...enumChangeMap.entries()].filter(([,e])=>!(e.valueType==='numeric'&&strKeysRender.has(e.baseKey)));
+  if (visibleEnumEntries.length) {
     html += `<div class="section"><div class="section-title">Enum changes</div>`;
     let idx = 0;
-    for (const [field, {added, removed, schemas, endpoints}] of enumChangeMap) {
+    for (const [, {added, removed, schemas, endpoints, baseKey:field}] of visibleEnumEntries) {
       const id = `enum-${idx++}`;
       const totalCount = added.size + removed.size;
       html += `

@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polly API changelog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0e0e0f;
+  --bg2: #161618;
+  --bg3: #1d1d20;
+  --border: #2a2a2e;
+  --border2: #3a3a3f;
+  --text: #e8e8ea;
+  --text2: #8e8e96;
+  --text3: #56565e;
+  --accent: #FFD601;
+  --accent2: #01FFF0;
+  --green: #4ade80;
+  --red: #f87171;
+  --blue: #60a5fa;
+  --amber: #fbbf24;
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'IBM Plex Sans', sans-serif;
+  --sidebar: 280px;
+}
+
+body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; line-height: 1.6; }
+
+a { color: var(--accent2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+#app { display: grid; grid-template-columns: var(--sidebar) 1fr; min-height: 100vh; }
+
+#sidebar {
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#sidebar-header {
+  padding: 20px 16px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+#sidebar-header h1 {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text2);
+}
+
+#sidebar-header .logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+#sidebar-header .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+#sidebar-header .title { font-size: 15px; font-weight: 500; color: var(--text); }
+
+#releases-list { flex: 1; overflow-y: auto; }
+#releases-list::-webkit-scrollbar { width: 4px; }
+#releases-list::-webkit-scrollbar-track { background: transparent; }
+#releases-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.release-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .1s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.release-item:hover { background: var(--bg3); }
+.release-item.active { background: var(--bg3); border-left: 2px solid var(--accent); }
+
+.release-item .ri-date {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 500;
+}
+.release-item .ri-hash {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text3);
+  margin-top: 2px;
+}
+.release-item .ri-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-family: var(--mono);
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.badge-green { background: rgba(74,222,128,.12); color: var(--green); border: 1px solid rgba(74,222,128,.2); }
+.badge-amber { background: rgba(251,191,36,.12); color: var(--amber); border: 1px solid rgba(251,191,36,.2); }
+.badge-blue  { background: rgba(96,165,250,.12); color: var(--blue);  border: 1px solid rgba(96,165,250,.2); }
+.badge-gray  { background: rgba(142,142,150,.08); color: var(--text3); border: 1px solid var(--border); }
+
+#compare-panel {
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+#compare-panel label { font-size: 11px; color: var(--text2); display: block; margin-bottom: 6px; letter-spacing: .04em; text-transform: uppercase; }
+#compare-panel select {
+  width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  appearance: none;
+  cursor: pointer;
+}
+#compare-panel select:focus { outline: 1px solid var(--accent); }
+#compare-btn {
+  width: 100%;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity .1s;
+  letter-spacing: .04em;
+}
+#compare-btn:hover { opacity: .85; }
+#compare-btn:disabled { opacity: .3; cursor: not-allowed; }
+
+#main { overflow-y: auto; }
+
+#content {
+  max-width: 860px;
+  padding: 32px 40px;
+}
+
+#loading, #empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  color: var(--text3);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  margin-right: 10px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.release-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.release-title {
+  font-size: 22px;
+  font-weight: 300;
+  color: var(--text);
+  letter-spacing: -.01em;
+}
+
+.release-subtitle {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 4px;
+}
+
+.release-links { display: flex; gap: 12px; align-items: center; margin-top: 4px; }
+.release-links a { font-size: 12px; font-family: var(--mono); color: var(--text2); }
+.release-links a:hover { color: var(--accent2); }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 28px;
+}
+
+.stat-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.stat-card .sc-label { font-size: 11px; color: var(--text3); margin-bottom: 4px; letter-spacing: .03em; }
+.stat-card .sc-value { font-size: 22px; font-weight: 300; font-family: var(--mono); color: var(--text); }
+.stat-card .sc-value.has-change { color: var(--green); }
+
+.section { margin-bottom: 28px; }
+
+.section-title {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.change-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  margin-bottom: 6px;
+  background: var(--bg2);
+  transition: border-color .1s;
+}
+.change-row:hover { border-color: var(--border2); }
+
+.method-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 3px;
+  min-width: 48px;
+  text-align: center;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+.m-get    { background: rgba(96,165,250,.12);  color: var(--blue);  border: 1px solid rgba(96,165,250,.2); }
+.m-post   { background: rgba(74,222,128,.12);  color: var(--green); border: 1px solid rgba(74,222,128,.2); }
+.m-put    { background: rgba(251,191,36,.12);  color: var(--amber); border: 1px solid rgba(251,191,36,.2); }
+.m-patch  { background: rgba(251,191,36,.12);  color: var(--amber); border: 1px solid rgba(251,191,36,.2); }
+.m-delete { background: rgba(248,113,113,.12); color: var(--red);   border: 1px solid rgba(248,113,113,.2); }
+.m-enum   { background: rgba(167,139,250,.12); color: #a78bfa;      border: 1px solid rgba(167,139,250,.2); }
+.m-schema { background: rgba(142,142,150,.1);  color: var(--text2); border: 1px solid var(--border); }
+.m-new    { background: rgba(1,255,240,.1);    color: var(--accent2); border: 1px solid rgba(1,255,240,.2); }
+
+.change-path {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text2);
+  flex: 1;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.change-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.change-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.tag-add { background: rgba(74,222,128,.1); color: var(--green); }
+.tag-rm  { background: rgba(248,113,113,.1); color: var(--red); }
+.tag-mod { background: rgba(251,191,36,.1); color: var(--amber); }
+
+.enum-section {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.enum-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg2);
+  cursor: pointer;
+  user-select: none;
+}
+.enum-header:hover { background: var(--bg3); }
+.enum-name { font-family: var(--mono); font-size: 13px; color: var(--text); }
+.enum-count { font-family: var(--mono); font-size: 10px; margin-left: auto; }
+.enum-chevron { font-size: 10px; color: var(--text3); transition: transform .2s; }
+.enum-chevron.open { transform: rotate(180deg); }
+
+.enum-body { display: none; padding: 12px 14px; border-top: 1px solid var(--border); }
+.enum-body.open { display: block; }
+
+.enum-schemas {
+  font-size: 11px;
+  color: var(--text3);
+  font-family: var(--mono);
+  margin-bottom: 10px;
+}
+.enum-values { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.enum-value {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 3px;
+}
+
+.enum-endpoints { font-size: 12px; color: var(--text3); }
+.enum-endpoints .ep { font-family: var(--mono); font-size: 11px; color: var(--text2); display: block; margin-top: 3px; }
+
+.no-change {
+  color: var(--text3);
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 20px 0;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+}
+
+.compare-banner {
+  background: rgba(255,214,1,.06);
+  border: 1px solid rgba(255,214,1,.2);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 20px;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--amber);
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar">
+    <div id="sidebar-header">
+      <div class="logo">
+        <div class="dot"></div>
+        <span class="title">Polly API</span>
+      </div>
+      <h1>Release history</h1>
+    </div>
+    <div id="releases-list"></div>
+    <div id="compare-panel">
+      <label>Compare any two releases</label>
+      <select id="from-select"></select>
+      <select id="to-select"></select>
+      <button id="compare-btn" disabled>Compare</button>
+    </div>
+  </nav>
+  <main id="main">
+    <div id="content">
+      <div id="loading"><div class="spinner"></div>Loading releases...</div>
+    </div>
+  </main>
+</div>
+
+<script>
+const OWNER = 'ribo916';
+const REPO  = 'openapi-watcher';
+const BRANCH = 'master';
+const RAW = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}`;
+const GH_API = `https://api.github.com/repos/${OWNER}/${REPO}`;
+const METHODS = ['get','post','put','patch','delete','head','options'];
+
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${url}`);
+  return r.json();
+}
+
+function extractProps(s, prefix='') {
+  const result = new Set();
+  if (!s || typeof s !== 'object') return result;
+  for (const [k,v] of Object.entries(s.properties ?? {})) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    result.add(key);
+    extractProps(v, key).forEach(p => result.add(p));
+  }
+  for (const c of ['allOf','oneOf','anyOf']) {
+    for (const sub of s[c] ?? []) extractProps(sub, prefix).forEach(p => result.add(p));
+  }
+  return result;
+}
+
+function extractEnums(s, prefix='') {
+  const r = {};
+  if (!s || typeof s !== 'object') return r;
+  if (Array.isArray(s.enum)) r[prefix] = s.enum;
+  for (const [k,v] of Object.entries(s.properties ?? {}))
+    Object.assign(r, extractEnums(v, prefix ? `${prefix}.${k}` : k));
+  for (const c of ['allOf','oneOf','anyOf'])
+    for (const sub of s[c] ?? []) Object.assign(r, extractEnums(sub, prefix));
+  return r;
+}
+
+function resolveSchema(s, schemas) {
+  if (!s) return {};
+  if (s.$ref) return schemas[s.$ref.split('/').pop()] ?? {};
+  return s;
+}
+
+function getRefs(obj, found=new Set()) {
+  if (!obj || typeof obj !== 'object') return found;
+  if (Array.isArray(obj)) { obj.forEach(v => getRefs(v,found)); return found; }
+  if (obj.$ref) found.add(obj.$ref.split('/').pop());
+  Object.values(obj).forEach(v => getRefs(v,found));
+  return found;
+}
+
+function diff(oldSpec, newSpec) {
+  const oldPaths = oldSpec.paths ?? {};
+  const newPaths = newSpec.paths ?? {};
+  const oldSchemas = oldSpec.components?.schemas ?? {};
+  const newSchemas = newSpec.components?.schemas ?? {};
+
+  const oldPathSet = new Set(Object.keys(oldPaths));
+  const newPathSet = new Set(Object.keys(newPaths));
+  const addedPaths   = [...newPathSet].filter(p => !oldPathSet.has(p));
+  const removedPaths = [...oldPathSet].filter(p => !newPathSet.has(p));
+  const sharedPaths  = [...newPathSet].filter(p => oldPathSet.has(p));
+
+  const addedOps = [], removedOps = [];
+  for (const path of sharedPaths) {
+    const oo = new Set(METHODS.filter(m => oldPaths[path]?.[m]));
+    const no = new Set(METHODS.filter(m => newPaths[path]?.[m]));
+    for (const m of no) if (!oo.has(m)) addedOps.push({method:m.toUpperCase(), path});
+    for (const m of oo) if (!no.has(m)) removedOps.push({method:m.toUpperCase(), path});
+  }
+
+  const responseCodeChanges = [];
+  for (const path of sharedPaths) {
+    for (const method of METHODS) {
+      const oo = oldPaths[path]?.[method];
+      const no = newPaths[path]?.[method];
+      if (!oo || !no) continue;
+      const oc = new Set(Object.keys(oo.responses ?? {}));
+      const nc = new Set(Object.keys(no.responses ?? {}));
+      const added   = [...nc].filter(c => !oc.has(c));
+      const removed = [...oc].filter(c => !nc.has(c));
+      if (added.length || removed.length)
+        responseCodeChanges.push({method:method.toUpperCase(), path, added, removed});
+    }
+  }
+
+  const paramChanges = [];
+  for (const path of sharedPaths) {
+    for (const method of METHODS) {
+      const oo = oldPaths[path]?.[method];
+      const no = newPaths[path]?.[method];
+      if (!oo || !no) continue;
+      const op = {}, np = {};
+      for (const p of oo.parameters ?? []) if (p.name) op[`${p.in}:${p.name}`] = p;
+      for (const p of no.parameters ?? []) if (p.name) np[`${p.in}:${p.name}`] = p;
+      const added   = Object.keys(np).filter(k => !op[k]).map(k => { const [loc,name]=k.split(':'); return {loc,name}; });
+      const removed = Object.keys(op).filter(k => !np[k]).map(k => { const [loc,name]=k.split(':'); return {loc,name}; });
+      if (added.length || removed.length)
+        paramChanges.push({method:method.toUpperCase(), path, added, removed});
+    }
+  }
+
+  const requestBodyChanges = [];
+  for (const path of sharedPaths) {
+    for (const method of METHODS) {
+      const oo = oldPaths[path]?.[method];
+      const no = newPaths[path]?.[method];
+      if (!oo || !no) continue;
+      const oc = oo.requestBody?.content ?? {};
+      const nc = no.requestBody?.content ?? {};
+      const cts = new Set([...Object.keys(oc),...Object.keys(nc)]);
+      const added = new Set(), removed = new Set();
+      for (const ct of cts) {
+        const op = extractProps(resolveSchema(oc[ct]?.schema, oldSchemas));
+        const np = extractProps(resolveSchema(nc[ct]?.schema, newSchemas));
+        np.forEach(p => { if (!op.has(p)) added.add(p); });
+        op.forEach(p => { if (!np.has(p)) removed.add(p); });
+      }
+      if (added.size || removed.size)
+        requestBodyChanges.push({method:method.toUpperCase(), path, added:[...added].sort(), removed:[...removed].sort()});
+    }
+  }
+
+  const responseBodyChanges = [];
+  for (const path of sharedPaths) {
+    for (const method of METHODS) {
+      const oo = oldPaths[path]?.[method];
+      const no = newPaths[path]?.[method];
+      if (!oo || !no) continue;
+      const allCodes = new Set([...Object.keys(oo.responses??{}),...Object.keys(no.responses??{})]);
+      for (const code of allCodes) {
+        const or = oo.responses?.[code], nr = no.responses?.[code];
+        if (!or || !nr) continue;
+        const oc = or.content ?? {}, nc = nr.content ?? {};
+        const cts = new Set([...Object.keys(oc),...Object.keys(nc)]);
+        const added = new Set(), removed = new Set();
+        for (const ct of cts) {
+          const op = extractProps(resolveSchema(oc[ct]?.schema, oldSchemas));
+          const np = extractProps(resolveSchema(nc[ct]?.schema, newSchemas));
+          np.forEach(p => { if (!op.has(p)) added.add(p); });
+          op.forEach(p => { if (!np.has(p)) removed.add(p); });
+        }
+        if (added.size || removed.size)
+          responseBodyChanges.push({method:method.toUpperCase(), path, code, added:[...added].sort(), removed:[...removed].sort()});
+      }
+    }
+  }
+
+  const schemaFieldChanges = [];
+  for (const name of new Set([...Object.keys(oldSchemas),...Object.keys(newSchemas)])) {
+    const op = extractProps(oldSchemas[name] ?? {});
+    const np = extractProps(newSchemas[name] ?? {});
+    const added   = [...np].filter(p => !op.has(p));
+    const removed = [...op].filter(p => !np.has(p));
+    if (added.length || removed.length) schemaFieldChanges.push({schema:name, added:added.sort(), removed:removed.sort()});
+  }
+
+  const enumChangeMap = new Map();
+  for (const name of new Set([...Object.keys(oldSchemas),...Object.keys(newSchemas)])) {
+    const oe = extractEnums(oldSchemas[name]??{});
+    const ne = extractEnums(newSchemas[name]??{});
+    for (const field of new Set([...Object.keys(oe),...Object.keys(ne)])) {
+      const ov = new Set(oe[field]??[]);
+      const nv = new Set(ne[field]??[]);
+      const added   = [...nv].filter(v => !ov.has(v));
+      const removed = [...ov].filter(v => !nv.has(v));
+      if (!added.length && !removed.length) continue;
+      const key = field || name;
+      if (!enumChangeMap.has(key)) enumChangeMap.set(key, {added:new Set(), removed:new Set(), schemas:new Set(), endpoints:new Set()});
+      const e = enumChangeMap.get(key);
+      added.forEach(v => e.added.add(v));
+      removed.forEach(v => e.removed.add(v));
+      e.schemas.add(name);
+    }
+  }
+  for (const [,entry] of enumChangeMap) {
+    for (const path of Object.keys(newPaths)) {
+      for (const method of METHODS) {
+        const op = newPaths[path]?.[method];
+        if (!op) continue;
+        const r = getRefs(op);
+        if ([...entry.schemas].some(s => r.has(s))) entry.endpoints.add(`${method.toUpperCase()} ${path}`);
+      }
+    }
+  }
+
+  return { addedPaths, removedPaths, addedOps, removedOps, responseCodeChanges, paramChanges, requestBodyChanges, responseBodyChanges, schemaFieldChanges, enumChangeMap };
+}
+
+function summaryBadge(d) {
+  const { addedPaths, removedPaths, addedOps, removedOps, responseCodeChanges, paramChanges, requestBodyChanges, responseBodyChanges, schemaFieldChanges, enumChangeMap } = d;
+  const enumAdded = [...enumChangeMap.values()].reduce((n,e)=>n+e.added.size,0);
+  const enumRemoved = [...enumChangeMap.values()].reduce((n,e)=>n+e.removed.size,0);
+  const totalEndpoints = addedPaths.length + removedPaths.length + addedOps.length + removedOps.length;
+  const totalCodes = responseCodeChanges.reduce((n,r)=>n+r.added.length+r.removed.length,0);
+  const totalFields = requestBodyChanges.reduce((n,r)=>n+r.added.length+r.removed.length,0) + responseBodyChanges.reduce((n,r)=>n+r.added.length+r.removed.length,0);
+  const totalEnums = enumAdded + enumRemoved;
+  const totalSchemas = schemaFieldChanges.reduce((n,s)=>n+s.added.length+s.removed.length,0);
+  const totalParams = paramChanges.reduce((n,p)=>n+p.added.length+p.removed.length,0);
+  const total = totalEndpoints + totalCodes + totalFields + totalEnums + totalSchemas + totalParams;
+  if (total === 0) return {text:'no change', cls:'badge-gray'};
+  if (totalEnums > 10) return {text:`+${totalEnums} enums`, cls:'badge-amber'};
+  if (totalEndpoints > 0) return {text:`${totalEndpoints} endpoint${totalEndpoints>1?'s':''}`, cls:'badge-green'};
+  if (totalCodes > 0) return {text:`${totalCodes} code${totalCodes>1?'s':''}`, cls:'badge-blue'};
+  if (totalFields > 0) return {text:`${totalFields} field${totalFields>1?'s':''}`, cls:'badge-green'};
+  return {text:`${total} change${total>1?'s':''}`, cls:'badge-green'};
+}
+
+function methodClass(m) {
+  return ({GET:'m-get',POST:'m-post',PUT:'m-put',PATCH:'m-patch',DELETE:'m-delete'})[m] || 'm-schema';
+}
+
+function renderDiff(d, prevFile, latestFile, issueUrl) {
+  const { addedPaths, removedPaths, addedOps, removedOps, responseCodeChanges, paramChanges, requestBodyChanges, responseBodyChanges, schemaFieldChanges, enumChangeMap } = d;
+  const enumAdded = [...enumChangeMap.values()].reduce((n,e)=>n+e.added.size,0);
+  const totalEndpoints = addedPaths.length + removedPaths.length + addedOps.length + removedOps.length;
+  const totalCodes = responseCodeChanges.reduce((n,r)=>n+r.added.length+r.removed.length,0);
+  const totalFields = requestBodyChanges.reduce((n,r)=>n+r.added.length,0) + responseBodyChanges.reduce((n,r)=>n+r.added.length,0);
+  const totalSchemas = schemaFieldChanges.reduce((n,s)=>n+s.added.length+s.removed.length,0);
+
+  const date = latestFile.substring(0,10);
+  const hash = latestFile.substring(11,23);
+
+  let html = `
+    <div class="release-header">
+      <div>
+        <div class="release-title">${formatDate(date)}</div>
+        <div class="release-subtitle">${latestFile} ← ${prevFile}</div>
+        <div class="release-links">
+          ${issueUrl ? `<a href="${issueUrl}" target="_blank">GitHub issue ↗</a>` : ''}
+          <a href="https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/data/${latestFile}" target="_blank">Raw spec ↗</a>
+        </div>
+      </div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="sc-label">Endpoints</div><div class="sc-value ${totalEndpoints?'has-change':''}">${totalEndpoints||'—'}</div></div>
+      <div class="stat-card"><div class="sc-label">Response codes</div><div class="sc-value ${totalCodes?'has-change':''}">${totalCodes||'—'}</div></div>
+      <div class="stat-card"><div class="sc-label">Fields</div><div class="sc-value ${totalFields?'has-change':''}">${totalFields||'—'}</div></div>
+      <div class="stat-card"><div class="sc-label">Enum values</div><div class="sc-value ${enumAdded?'has-change':''}">${enumAdded||'—'}</div></div>
+      <div class="stat-card"><div class="sc-label">Schema fields</div><div class="sc-value ${totalSchemas?'has-change':''}">${totalSchemas||'—'}</div></div>
+    </div>`;
+
+  const hasAny = totalEndpoints || totalCodes || requestBodyChanges.length || responseBodyChanges.length || schemaFieldChanges.length || enumChangeMap.size || paramChanges.length;
+
+  if (!hasAny) {
+    html += `<div class="no-change">No structural changes detected</div>`;
+    return html;
+  }
+
+  if (addedPaths.length || removedPaths.length || addedOps.length || removedOps.length) {
+    html += `<div class="section"><div class="section-title">Endpoints</div>`;
+    for (const p of addedPaths) html += changeRow('NEW', p, [{text:'new path', cls:'tag-add'}]);
+    for (const p of removedPaths) html += changeRow('DEL', p, [{text:'removed', cls:'tag-rm'}]);
+    for (const {method,path} of addedOps) html += changeRow(method, path, [{text:'new operation', cls:'tag-add'}]);
+    for (const {method,path} of removedOps) html += changeRow(method, path, [{text:'removed', cls:'tag-rm'}]);
+    html += `</div>`;
+  }
+
+  if (responseCodeChanges.length) {
+    html += `<div class="section"><div class="section-title">Response codes</div>`;
+    for (const {method,path,added,removed} of responseCodeChanges) {
+      const tags = [...added.map(c=>({text:`+${c}`,cls:'tag-add'})), ...removed.map(c=>({text:`-${c}`,cls:'tag-rm'}))];
+      html += changeRow(method, path, tags);
+    }
+    html += `</div>`;
+  }
+
+  if (paramChanges.length) {
+    html += `<div class="section"><div class="section-title">Parameters</div>`;
+    for (const {method,path,added,removed} of paramChanges) {
+      const tags = [...added.map(p=>({text:`+${p.loc}:${p.name}`,cls:'tag-add'})), ...removed.map(p=>({text:`-${p.loc}:${p.name}`,cls:'tag-rm'}))];
+      html += changeRow(method, path, tags);
+    }
+    html += `</div>`;
+  }
+
+  if (requestBodyChanges.length) {
+    html += `<div class="section"><div class="section-title">Request body</div>`;
+    for (const {method,path,added,removed} of requestBodyChanges) {
+      const tags = [...added.map(f=>({text:`+${f}`,cls:'tag-add'})), ...removed.map(f=>({text:`-${f}`,cls:'tag-rm'}))];
+      html += changeRow(method, path, tags);
+    }
+    html += `</div>`;
+  }
+
+  if (responseBodyChanges.length) {
+    html += `<div class="section"><div class="section-title">Response body</div>`;
+    for (const {method,path,code,added,removed} of responseBodyChanges) {
+      const tags = [...added.map(f=>({text:`+${f}`,cls:'tag-add'})), ...removed.map(f=>({text:`-${f}`,cls:'tag-rm'}))];
+      html += changeRow(method, `${path} — ${code}`, tags);
+    }
+    html += `</div>`;
+  }
+
+  if (schemaFieldChanges.length) {
+    html += `<div class="section"><div class="section-title">Schema fields</div>`;
+    for (const {schema,added,removed} of schemaFieldChanges) {
+      const tags = [...added.map(f=>({text:`+${f}`,cls:'tag-add'})), ...removed.map(f=>({text:`-${f}`,cls:'tag-rm'}))];
+      html += changeRow('SCHEMA', schema, tags);
+    }
+    html += `</div>`;
+  }
+
+  if (enumChangeMap.size) {
+    html += `<div class="section"><div class="section-title">Enum changes</div>`;
+    let idx = 0;
+    for (const [field, {added, removed, schemas, endpoints}] of enumChangeMap) {
+      const id = `enum-${idx++}`;
+      const totalCount = added.size + removed.size;
+      html += `
+        <div class="enum-section">
+          <div class="enum-header" onclick="toggleEnum('${id}')">
+            <span class="method-badge m-enum">ENUM</span>
+            <span class="enum-name">${field}</span>
+            <span class="enum-count ${added.size?'tag-add':'tag-rm'} change-tag">
+              ${added.size ? `+${added.size}` : ''}${removed.size ? ` -${removed.size}` : ''}
+            </span>
+            <span class="enum-chevron" id="${id}-chev">▼</span>
+          </div>
+          <div class="enum-body" id="${id}">
+            <div class="enum-schemas">Schemas: ${[...schemas].sort().join(', ')}</div>`;
+      if (added.size) {
+        html += `<div class="enum-values">`;
+        for (const v of [...added].sort()) html += `<span class="enum-value tag-add">${v}</span>`;
+        html += `</div>`;
+      }
+      if (removed.size) {
+        html += `<div class="enum-values">`;
+        for (const v of [...removed].sort()) html += `<span class="enum-value tag-rm">${v}</span>`;
+        html += `</div>`;
+      }
+      if (endpoints.size) {
+        html += `<div class="enum-endpoints">Affected endpoints:`;
+        for (const ep of [...endpoints].sort()) html += `<span class="ep">${ep}</span>`;
+        html += `</div>`;
+      }
+      html += `</div></div>`;
+    }
+    html += `</div>`;
+  }
+
+  return html;
+}
+
+function changeRow(method, path, tags) {
+  const mc = methodClass(method);
+  return `<div class="change-row">
+    <span class="method-badge ${mc}">${method}</span>
+    <div style="flex:1;">
+      <div class="change-path">${path}</div>
+      <div class="change-tags">${tags.map(t=>`<span class="change-tag ${t.cls}">${t.text}</span>`).join('')}</div>
+    </div>
+  </div>`;
+}
+
+function formatDate(iso) {
+  const d = new Date(iso + 'T12:00:00Z');
+  return d.toLocaleDateString('en-US', {year:'numeric', month:'long', day:'numeric', timeZone:'UTC'});
+}
+
+window.toggleEnum = function(id) {
+  const body = document.getElementById(id);
+  const chev = document.getElementById(id+'-chev');
+  body.classList.toggle('open');
+  chev.classList.toggle('open');
+};
+
+let snapshots = [];
+let issuesByFile = {};
+
+async function loadIssues() {
+  try {
+    const issues = await fetchJSON(`${GH_API}/issues?labels=api-change&state=all&per_page=100`);
+    for (const issue of issues) {
+      const m = issue.title.match(/→ (.+\.json)$/);
+      if (m) issuesByFile[m[1]] = issue.html_url;
+    }
+  } catch(e) {}
+}
+
+async function init() {
+  await loadIssues();
+
+  const meta = await fetchJSON(`${RAW}/data/meta.json`);
+  const files = await fetchJSON(`${GH_API}/contents/data`);
+  const jsonFiles = files
+    .filter(f => f.name.match(/^\d{4}-\d{2}-\d{2}-[a-f0-9]+\.json$/))
+    .map(f => f.name)
+    .sort();
+
+  for (let i = 1; i < jsonFiles.length; i++) {
+    snapshots.push({ file: jsonFiles[i], prev: jsonFiles[i-1] });
+  }
+  snapshots.reverse();
+
+  const list = document.getElementById('releases-list');
+  const fromSel = document.getElementById('from-select');
+  const toSel   = document.getElementById('to-select');
+
+  for (const f of jsonFiles) {
+    const opt = document.createElement('option');
+    opt.value = f; opt.textContent = f.substring(0,10);
+    fromSel.appendChild(opt.cloneNode(true));
+    toSel.appendChild(opt);
+  }
+  fromSel.value = jsonFiles[jsonFiles.length - 2];
+  toSel.value   = jsonFiles[jsonFiles.length - 1];
+  document.getElementById('compare-btn').disabled = false;
+
+  const specCache = {};
+  async function getSpec(file) {
+    if (!specCache[file]) specCache[file] = await fetchJSON(`${RAW}/data/${file}`);
+    return specCache[file];
+  }
+
+  async function showRelease(snap, el) {
+    document.querySelectorAll('.release-item').forEach(r => r.classList.remove('active'));
+    if (el) el.classList.add('active');
+    document.getElementById('content').innerHTML = `<div id="loading"><div class="spinner"></div>Diffing ${snap.prev.substring(0,10)} → ${snap.file.substring(0,10)}...</div>`;
+    try {
+      const [oldSpec, newSpec] = await Promise.all([getSpec(snap.prev), getSpec(snap.file)]);
+      const d = diff(oldSpec, newSpec);
+      document.getElementById('content').innerHTML = renderDiff(d, snap.prev, snap.file, issuesByFile[snap.file]);
+    } catch(e) {
+      document.getElementById('content').innerHTML = `<div id="empty">Error loading diff: ${e.message}</div>`;
+    }
+  }
+
+  for (const snap of snapshots) {
+    const item = document.createElement('div');
+    item.className = 'release-item';
+    item.innerHTML = `
+      <div style="flex:1;">
+        <div class="ri-date">${snap.file.substring(0,10)}</div>
+        <div class="ri-hash">${snap.file.substring(11,19)}</div>
+      </div>
+      <span class="ri-badge badge-gray">...</span>`;
+    item.addEventListener('click', () => showRelease(snap, item));
+    list.appendChild(item);
+
+    (async () => {
+      try {
+        const [oldSpec, newSpec] = await Promise.all([getSpec(snap.prev), getSpec(snap.file)]);
+        const d = diff(oldSpec, newSpec);
+        const b = summaryBadge(d);
+        item.querySelector('.ri-badge').className = `ri-badge ${b.cls}`;
+        item.querySelector('.ri-badge').textContent = b.text;
+      } catch(e) { item.querySelector('.ri-badge').textContent = 'err'; }
+    })();
+  }
+
+  document.getElementById('compare-btn').addEventListener('click', async () => {
+    const from = fromSel.value, to = toSel.value;
+    if (from === to) return;
+    document.querySelectorAll('.release-item').forEach(r => r.classList.remove('active'));
+    document.getElementById('content').innerHTML = `<div id="loading"><div class="spinner"></div>Comparing...</div>`;
+    try {
+      const [oldSpec, newSpec] = await Promise.all([getSpec(from), getSpec(to)]);
+      const d = diff(oldSpec, newSpec);
+      const banner = from !== snapshots.find(s=>s.file===to)?.prev
+        ? `<div class="compare-banner">Custom comparison: ${from.substring(0,10)} → ${to.substring(0,10)}</div>` : '';
+      document.getElementById('content').innerHTML = banner + renderDiff(d, from, to, issuesByFile[to]);
+    } catch(e) {
+      document.getElementById('content').innerHTML = `<div id="empty">Error: ${e.message}</div>`;
+    }
+  });
+
+  if (snapshots.length > 0) showRelease(snapshots[0], list.firstChild);
+}
+
+init().catch(e => {
+  document.getElementById('content').innerHTML = `<div id="empty">Failed to load: ${e.message}</div>`;
+});
+</script>
+</body>
+</html>

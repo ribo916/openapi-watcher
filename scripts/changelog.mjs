@@ -42,6 +42,33 @@ function refs(obj, found = new Set()) {
   return found;
 }
 
+function buildReachabilityMap(schemas) {
+  const cache = new Map();
+  function findDirectRefs(obj, found = new Set()) {
+    if (!obj || typeof obj !== "object") return found;
+    if (Array.isArray(obj)) { obj.forEach(v => findDirectRefs(v, found)); return found; }
+    if (obj.$ref) found.add(obj.$ref.split("/").pop());
+    Object.values(obj).forEach(v => findDirectRefs(v, found));
+    return found;
+  }
+  function getReachable(startName) {
+    if (cache.has(startName)) return cache.get(startName);
+    const reachable = new Set();
+    const worklist = [startName];
+    while (worklist.length) {
+      const name = worklist.pop();
+      if (reachable.has(name)) continue;
+      reachable.add(name);
+      const schema = schemas[name];
+      if (schema) for (const ref of findDirectRefs(schema)) if (!reachable.has(ref)) worklist.push(ref);
+    }
+    cache.set(startName, reachable);
+    return reachable;
+  }
+  for (const name of Object.keys(schemas)) getReachable(name);
+  return cache;
+}
+
 function extractEnums(schemaObj, prefix = "") {
   const result = {};
   if (!schemaObj || typeof schemaObj !== "object") return result;
@@ -303,14 +330,21 @@ for (const schemaName of new Set([...Object.keys(oldSchemas), ...Object.keys(new
   const newEnums = extractEnums(newSchemas[schemaName] ?? {});
   const allFields = new Set([...Object.keys(oldEnums), ...Object.keys(newEnums)]);
   for (const field of allFields) {
-    const oldVals = new Set(oldEnums[field] ?? []);
-    const newVals = new Set(newEnums[field] ?? []);
+    const rawOld = (oldEnums[field] ?? []).filter(v => v != null);
+    const rawNew = (newEnums[field] ?? []).filter(v => v != null);
+    // Determine dominant value type — separate numeric enums from string enums
+    const isNumeric = (vals) => vals.length > 0 && vals.filter(v => typeof v === "number").length / vals.length > 0.5;
+    const valueType = isNumeric(rawNew.length ? rawNew : rawOld) ? "numeric" : "string";
+    const oldVals = new Set(rawOld.map(v => String(v)));
+    const newVals = new Set(rawNew.map(v => String(v)));
     const added   = [...newVals].filter(v => !oldVals.has(v));
     const removed = [...oldVals].filter(v => !newVals.has(v));
     if (!added.length && !removed.length) continue;
-    const key = field || schemaName;
+    // Key includes type to prevent merging numeric and string enums
+    const baseKey = field || schemaName;
+    const key = `${baseKey}:${valueType}`;
     if (!enumChangeMap.has(key)) {
-      enumChangeMap.set(key, { added: new Set(), removed: new Set(), schemas: new Set(), endpoints: new Set() });
+      enumChangeMap.set(key, { added: new Set(), removed: new Set(), schemas: new Set(), endpoints: new Set(), baseKey, valueType });
     }
     const entry = enumChangeMap.get(key);
     added.forEach(v => entry.added.add(v));
@@ -318,13 +352,20 @@ for (const schemaName of new Set([...Object.keys(oldSchemas), ...Object.keys(new
     entry.schemas.add(schemaName);
   }
 }
+const reachabilityMap = buildReachabilityMap(newSchemas);
+function getOpReachable(op) {
+  const all = new Set();
+  for (const r of refs(op)) (reachabilityMap.get(r) ?? new Set([r])).forEach(s => all.add(s));
+  return all;
+}
+
 for (const [, entry] of enumChangeMap) {
   for (const path of Object.keys(newPaths)) {
     for (const method of METHODS) {
       const op = newPaths[path]?.[method];
       if (!op) continue;
-      const opRefs = refs(op);
-      if ([...entry.schemas].some(s => opRefs.has(s))) {
+      const opReachable = getOpReachable(op);
+      if ([...entry.schemas].some(s => opReachable.has(s))) {
         entry.endpoints.add(`${method.toUpperCase()} ${path}`);
       }
     }
@@ -348,8 +389,9 @@ for (const schemaName of new Set([...Object.keys(oldSchemas), ...Object.keys(new
 
 const lines = [];
 
-const totalEnumAdded    = [...enumChangeMap.values()].reduce((n, e) => n + e.added.size, 0);
-const totalEnumRemoved  = [...enumChangeMap.values()].reduce((n, e) => n + e.removed.size, 0);
+const stringKeysForCount = new Set([...enumChangeMap.entries()].filter(([,e]) => e.valueType === "string").map(([,e]) => e.baseKey));
+const totalEnumAdded    = [...enumChangeMap.values()].filter(e => !(e.valueType === "numeric" && stringKeysForCount.has(e.baseKey))).reduce((n, e) => n + e.added.size, 0);
+const totalEnumRemoved  = [...enumChangeMap.values()].filter(e => !(e.valueType === "numeric" && stringKeysForCount.has(e.baseKey))).reduce((n, e) => n + e.removed.size, 0);
 const totalFieldAdded   = schemaFieldChanges.reduce((n, s) => n + s.added.length, 0);
 const totalFieldRemoved = schemaFieldChanges.reduce((n, s) => n + s.removed.length, 0);
 const totalRespCodes    = responseCodeChanges.reduce((n, r) => n + r.addedCodes.length + r.removedCodes.length, 0);
@@ -451,7 +493,12 @@ if (schemaFieldChanges.length) {
 if (enumChangeMap.size) {
   hasChanges = true;
   lines.push("## Enum Changes\n");
-  for (const [field, { added, removed, schemas, endpoints }] of enumChangeMap) {
+  // Build set of base keys that have a string-type group — numeric groups for same field are skipped
+  const stringKeys = new Set([...enumChangeMap.entries()].filter(([,e]) => e.valueType === "string").map(([,e]) => e.baseKey));
+  for (const [, { added, removed, schemas, endpoints, baseKey, valueType }] of enumChangeMap) {
+    // Skip numeric groups when a string group exists for the same field
+    if (valueType === "numeric" && stringKeys.has(baseKey)) continue;
+    const field = baseKey;
     lines.push(`### \`${field}\`\n`);
     lines.push(`**Schemas:** ${[...schemas].sort().join(", ")}\n`);
     if (added.size) {

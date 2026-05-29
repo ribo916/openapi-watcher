@@ -114,3 +114,11 @@ The watcher skips saving if the spec hash matches the last saved hash. To force 
 2. Trigger the workflow manually via **Actions → Run workflow**
 3. The hash mismatch will cause a new snapshot to be saved and an issue to be created
 4. Revert `meta.json` after testing
+
+---
+
+## Note on duplicate diff logic
+
+`scripts/changelog.mjs` and `docs/index.html` both implement the same diff algorithm independently. `changelog.mjs` runs in Node.js (used by the workflow and CLI), while `index.html` has a browser-compatible reimplementation.
+
+If you fix a bug or add a new change type to one, update the other. A future improvement would be extracting the shared logic into a `scripts/diff-engine.mjs` module that both can import.

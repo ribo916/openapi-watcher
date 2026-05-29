@@ -128,6 +128,136 @@ jobs:
             });
             core.info(`Created issue #${created.data.number}`);
 
+name: Daily OpenAPI Watch
+
+on:
+  schedule:
+    - cron: "30 14 * * *"   # 14:30 UTC ≈ 7:30 AM PT
+  workflow_dispatch:
+
+concurrency:
+  group: openapi-watcher
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      # 1) Fetch spec and maybe save new file
+      - name: Fetch OpenAPI & update meta/history
+        run: node index.mjs
+
+      # 2) Detect if index.mjs actually saved something
+      - name: Check change flag
+        id: changed
+        run: |
+          if [ -f .changed ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 3) Show recent run log
+      - name: Show last 50 runs
+        run: |
+          echo "### Last 50 runs" >> $GITHUB_STEP_SUMMARY
+          [ -f logs/runs.log ] && tail -n 50 logs/runs.log >> $GITHUB_STEP_SUMMARY || echo "_No runs yet_" >> $GITHUB_STEP_SUMMARY
+
+      # 4) Read latest / previous from meta.json
+      - name: Read latest/previous from meta
+        id: meta
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          LATEST=$(jq -r '.latestFile' data/meta.json)
+          PREV=$(jq -r '.previousFile' data/meta.json)
+          echo "LATEST=$LATEST" >> $GITHUB_ENV
+          echo "PREV=$PREV" >> $GITHUB_ENV
+          echo "Comparing $PREV → $LATEST"
+
+      # 5) Run oasdiff only if spec changed (kept for raw diff artifact)
+      - name: oasdiff (JSON)
+        if: steps.changed.outputs.changed == 'true' && env.PREV != '' && env.PREV != 'null'
+        uses: oasdiff/oasdiff-action/diff@v0.0.21
+        with:
+          base: data/${{ env.PREV }}
+          revision: data/${{ env.LATEST }}
+          format: json
+          output-to-file: diffs/${{ github.run_id }}.json
+
+      # 6) Ensure diff file always exists
+      - name: Ensure diff artifact exists
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          f="diffs/${{ github.run_id }}.json"
+          [ -s "$f" ] || echo '{}' > "$f"
+
+      # 7) Generate human-readable changelog
+      - name: Generate changelog
+        id: changelog
+        if: steps.changed.outputs.changed == 'true' && env.PREV != '' && env.PREV != 'null'
+        run: |
+          node scripts/changelog.mjs data/$PREV data/$LATEST > /tmp/changelog.md
+          echo "Generated changelog:"
+          cat /tmp/changelog.md
+
+      # 8) Create GitHub issue with readable changelog
+      - name: Create GitHub issue on real change
+        if: steps.changed.outputs.changed == 'true'
+        uses: actions/github-script@v9
+        env:
+          PREV: ${{ env.PREV }}
+          LATEST: ${{ env.LATEST }}
+        with:
+          script: |
+            const fs = require('fs');
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const diffUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/master/diffs/${context.runId}.json`;
+            const title = `OpenAPI change detected: ${process.env.PREV} → ${process.env.LATEST}`;
+
+            let changelog = '_Changelog unavailable._';
+            try {
+              changelog = fs.readFileSync('/tmp/changelog.md', 'utf8');
+            } catch (_) {}
+
+            const body = [
+              `**Base:** \`data/${process.env.PREV}\``,
+              `**Revision:** \`data/${process.env.LATEST}\``,
+              `**Run:** ${runUrl}`,
+              `**Full diff (JSON):** ${diffUrl}`,
+              '',
+              '---',
+              '',
+              changelog
+            ].join('\n');
+
+            const label = 'api-change';
+            try {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner, repo: context.repo.repo, name: label
+              });
+            } catch (_) {} // label probably exists
+
+            const created = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: [label]
+            });
+            core.info(`Created issue #${created.data.number}`);
+
       # 9) Commit artifacts (data, diffs, logs, .changed removed)
       - name: Commit artifacts
         run: |
@@ -139,6 +269,5 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "chore: update spec + diff + logs [skip ci]"
-            git pull --rebase
             git push
           fi

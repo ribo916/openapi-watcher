@@ -9,6 +9,27 @@ When the spec changes:
 
 ---
 
+## How to use this
+
+**Get email notifications**
+Watch this repo for issue notifications: **Watch → Custom → Issues → Apply**. You'll receive an email every time the spec changes. The email body contains the full changelog.
+
+**Browse release history**
+The release browser is hosted at **https://ribo916.github.io/openapi-watcher/**. It shows every spec snapshot, the diff for each release, and lets you compare any two dates.
+
+**Diff any two snapshots locally**
+Requires Node 20+. Clone the repo and run:
+
+```bash
+git clone https://github.com/ribo916/openapi-watcher.git
+cd openapi-watcher
+node scripts/changelog.mjs data/2026-05-20-*.json data/2026-05-29-*.json
+```
+
+Output is markdown to stdout. No files are modified.
+
+---
+
 ## Repo layout
 
 ```
@@ -18,6 +39,8 @@ When the spec changes:
 │   └── changelog.mjs                # Diffs two spec files, outputs markdown changelog
 ├── .github/workflows/
 │   └── watch.yml                    # Scheduled Action (daily + manual trigger)
+├── docs/
+│   └── index.html                   # GitHub Pages release browser
 ├── data/
 │   ├── YYYY-MM-DD-<hash12>.json     # One file per detected content change
 │   └── meta.json                    # Tracks latest/previous filenames and hashes
@@ -59,6 +82,9 @@ Accepts two spec files as arguments, diffs them, and outputs a markdown document
 5. Opens a GitHub issue with the changelog as the body, plus a link to the raw diff
 6. Commits `data/`, `diffs/`, `logs/` back to the repo
 
+### `docs/index.html`
+Single-file GitHub Pages app. Reads spec snapshots directly from the GitHub API at runtime — no build step, no backend. Diffs any two snapshots in the browser and renders the changelog with the same categories as the CLI script.
+
 ---
 
 ## Triggering a run manually
@@ -71,30 +97,17 @@ The run will appear in the Actions tab within seconds. If the spec has changed s
 
 ## Running the changelog locally
 
-Requires Node 20+. The script is read-only — it doesn't modify any files.
-
 ```bash
 node scripts/changelog.mjs data/<prev-file>.json data/<latest-file>.json
 ```
 
-Output is markdown printed to stdout. Pipe to a file if needed:
-
-```bash
-node scripts/changelog.mjs data/2026-05-20-a8ef192cf0fb.json data/2026-05-29-bd1de10b800b.json > /tmp/preview.md
-```
-
 **Choosing files by date**
 
-All snapshots are in `data/` and named `YYYY-MM-DD-<hash>.json`. To list available snapshots:
-
 ```bash
+# List all snapshots
 ls data/????-??-??-*.json | sort
-```
 
-Use shell globbing to pick by date without typing the full hash:
-
-```bash
-# Diff two specific dates
+# Diff two specific dates (no hash needed)
 node scripts/changelog.mjs data/2026-05-20-*.json data/2026-05-29-*.json
 
 # Diff the two most recent snapshots

@@ -43,9 +43,13 @@ When the spec changes:
 ### `scripts/changelog.mjs`
 Accepts two spec files as arguments, diffs them, and outputs a markdown document covering:
 - Added/removed endpoints and operations
+- Added/removed/modified parameters
 - Added/removed request body fields
+- Added/removed response HTTP status codes
+- Added/removed response body fields
 - Added/removed schema fields
 - Enum value changes — deduplicated across schemas, grouped by field name, with affected endpoints listed
+- Constraint changes (min/max) on schema fields
 
 ### `watch.yml`
 1. Runs `index.mjs`
@@ -65,24 +69,39 @@ The run will appear in the Actions tab within seconds. If the spec has changed s
 
 ---
 
-## Testing the changelog locally
+## Running the changelog locally
 
-Requires Node 20+.
+Requires Node 20+. The script is read-only — it doesn't modify any files.
 
 ```bash
 node scripts/changelog.mjs data/<prev-file>.json data/<latest-file>.json
 ```
 
-Example using the two most recent snapshots:
+Output is markdown printed to stdout. Pipe to a file if needed:
 
 ```bash
-node scripts/changelog.mjs data/2026-05-13-95345773aae7.json data/2026-05-20-a8ef192cf0fb.json
+node scripts/changelog.mjs data/2026-05-20-a8ef192cf0fb.json data/2026-05-29-bd1de10b800b.json > /tmp/preview.md
 ```
 
-Output is markdown, printed to stdout. Pipe to a file if needed:
+**Choosing files by date**
+
+All snapshots are in `data/` and named `YYYY-MM-DD-<hash>.json`. To list available snapshots:
 
 ```bash
-node scripts/changelog.mjs data/2026-05-13-95345773aae7.json data/2026-05-20-a8ef192cf0fb.json > /tmp/preview.md
+ls data/????-??-??-*.json | sort
+```
+
+Use shell globbing to pick by date without typing the full hash:
+
+```bash
+# Diff two specific dates
+node scripts/changelog.mjs data/2026-05-20-*.json data/2026-05-29-*.json
+
+# Diff the two most recent snapshots
+FILES=($(ls data/????-??-??-*.json | sort)); node scripts/changelog.mjs "${FILES[-2]}" "${FILES[-1]}"
+
+# Diff the oldest and newest
+FILES=($(ls data/????-??-??-*.json | sort)); node scripts/changelog.mjs "${FILES[0]}" "${FILES[-1]}"
 ```
 
 ---

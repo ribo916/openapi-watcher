@@ -1,6 +1,6 @@
 # OpenAPI Watcher
 
-Monitors the [Polly API spec](https://docs.polly.io/openapi/polly-api-1.json) for changes. Runs daily via GitHub Actions — no servers, no local runtime.
+Monitors the [API spec](https://docs.polly.io/openapi/polly-api-1.json) for changes. Runs daily via GitHub Actions — no servers, no local runtime.
 
 When the spec changes:
 - Saves a dated snapshot to `data/`

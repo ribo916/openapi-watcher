@@ -134,7 +134,7 @@ jobs:
           rm -f .changed || true
           git config user.name "openapi-bot"
           git config user.email "openapi-bot@example.com"
-          git pull --rebase
+          git pull --rebase --autostash
           git add data diffs logs || true
           if git diff --cached --quiet; then
             echo "No changes to commit."

@@ -59,6 +59,7 @@ jobs:
       # 5) Run oasdiff only if spec changed (kept for raw diff artifact)
       - name: oasdiff (JSON)
         if: steps.changed.outputs.changed == 'true' && env.PREV != '' && env.PREV != 'null'
+        continue-on-error: true
         uses: oasdiff/oasdiff-action/diff@v0.0.47
         with:
           base: data/${{ env.PREV }}
